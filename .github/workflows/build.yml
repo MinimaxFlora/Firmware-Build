@@ -1,7 +1,7 @@
 # =============================================================================
 #  Build OpenWrt Firmware
 # -----------------------------------------------------------------------------
-#  通过 MomoFlora/gh-action-imagebuilder 一键构建定制 OpenWrt 固件。
+#  通过 MinimaxFlora/gh-action-imagebuilder 一键构建定制 OpenWrt 固件。
 #  - 设备：x86-64 / x86-generic / x86-geode / x86-legacy / rockchip-armv8
 #  - 版本：选择 24 或 25，自动检测仓库最新 v24.* / v25.* release
 #  - 插件：Extras_Paclages 自动导入（24→ipk 分支，25→apk 分支）
@@ -92,7 +92,7 @@ jobs:
 
       - name: Build OpenWrt firmware with ImageBuilder
         id: build
-        uses: MomoFlora/gh-action-imagebuilder@master
+        uses: MinimaxFlora/gh-action-imagebuilder@master
         with:
           arch: ${{ inputs.arch }}
           version: ${{ inputs.series }}
