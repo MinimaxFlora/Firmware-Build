@@ -3,10 +3,9 @@
 # -----------------------------------------------------------------------------
 #  通过 MinimaxFlora/gh-action-imagebuilder 一键构建定制 OpenWrt 固件。
 #  - 设备：x86-64 / x86-generic / x86-geode / x86-legacy / rockchip-armv8
-#  - 版本：选择 24 或 25，自动检测仓库最新 v24.* / v25.* release
-#  - 插件：Extras_Paclages 自动导入（24→ipk 分支，25→apk 分支）
+#  - 版本：选择 24 或 25，自动检测官方最新版
+#  - 插件：勾选式选择，自动带主包 + 汉化 + 依赖
 #  - PPPoE：仓库 Secrets 配置 PPPOE_ACCOUNT / PPPOE_PASSWORD
-#           （两个都设置才启用拨号，否则 WAN 保持 DHCP）
 # =============================================================================
 
 name: Build OpenWrt Firmware
@@ -51,13 +50,18 @@ on:
           - '2G'
           - '3G'
           - '4G'
-      packages:
-        description: '选择额外安装的外部插件，空格分隔（如 luci-app-openclash luci-app-passwall）'
+      root_password:
+        description: '设置固件 root 密码（留空则保持默认空密码）'
         required: false
         type: string
         default: ''
-      root_password:
-        description: '设置固件 root 密码（留空则保持默认空密码）'
+      plugins:
+        description: '选择要安装的插件（可多选）'
+        required: false
+        type: string
+        default: ''
+      packages:
+        description: '自定义额外插件（空格分隔，如 luci-app-openclash luci-app-passwall）'
         required: false
         type: string
         default: ''
@@ -73,14 +77,68 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      - name: Install ImageBuilder build dependencies
+      - name: Resolve plugins
+        id: plugins
         shell: bash
         run: |
-          sudo apt-get update -qq || true
-          sudo apt-get install -y -qq \
-            build-essential file libncurses-dev zlib1g-dev gawk git \
-            gettext libssl-dev xsltproc rsync wget unzip \
-            python3 python3-setuptools zstd
+          PLUGINS="${{ inputs.plugins }}"
+          NAMES=""
+          PKGS=""
+          if echo "$PLUGINS" | grep -q 'pkg_argon'; then
+            PKGS="$PKGS luci-app-argon-config luci-theme-argon luci-i18n-argon-config-zh-cn"
+            NAMES="$NAMES Argon 主题 + 配置"
+          fi
+          if echo "$PLUGINS" | grep -q 'pkg_aurora'; then
+            PKGS="$PKGS luci-app-aurora-config luci-theme-aurora luci-i18n-aurora-config-zh-cn"
+            NAMES="$NAMES Aurora 主题 + 配置"
+          fi
+          if echo "$PLUGINS" | grep -q 'pkg_kucat'; then
+            PKGS="$PKGS luci-app-kucat-config luci-theme-kucat luci-i18n-kucat-config-zh-cn"
+            NAMES="$NAMES Kucat 主题 + 配置"
+          fi
+          if echo "$PLUGINS" | grep -q 'pkg_design'; then
+            PKGS="$PKGS luci-theme-design"
+            NAMES="$NAMES Design 主题"
+          fi
+          if echo "$PLUGINS" | grep -q 'pkg_shadcn'; then
+            PKGS="$PKGS luci-theme-shadcn"
+            NAMES="$NAMES Shadcn 主题"
+          fi
+          if echo "$PLUGINS" | grep -q 'pkg_mosdns'; then
+            PKGS="$PKGS luci-app-mosdns mosdns v2ray-geoip v2ray-geosite v2dat luci-i18n-mosdns-zh-cn"
+            NAMES="$NAMES MosDNS（DNS 转发）"
+          fi
+          if echo "$PLUGINS" | grep -q 'pkg_homeproxy'; then
+            PKGS="$PKGS luci-app-homeproxy sing-box luci-i18n-homeproxy-zh-cn"
+            NAMES="$NAMES HomeProxy（代理）"
+          fi
+          if echo "$PLUGINS" | grep -q 'pkg_diskman'; then
+            PKGS="$PKGS luci-app-diskman luci-i18n-diskman-zh-cn"
+            NAMES="$NAMES 磁盘管理"
+          fi
+          if echo "$PLUGINS" | grep -q 'pkg_openlist2'; then
+            PKGS="$PKGS luci-app-openlist2 luci-i18n-openlist2-zh-cn"
+            NAMES="$NAMES OpenList2（导航）"
+          fi
+          if echo "$PLUGINS" | grep -q 'pkg_ramfree'; then
+            PKGS="$PKGS luci-app-ramfree luci-i18n-ramfree-zh-cn"
+            NAMES="$NAMES 内存清理"
+          fi
+          if echo "$PLUGINS" | grep -q 'pkg_airconnect'; then
+            PKGS="$PKGS luci-app-airconnect luci-i18n-airconnect-zh-cn"
+            NAMES="$NAMES AirConnect（AirPlay）"
+          fi
+          if echo "$PLUGINS" | grep -q 'pkg_bandix'; then
+            PKGS="$PKGS luci-app-bandix-plus luci-i18n-bandix-plus-zh-cn"
+            NAMES="$NAMES Bandix Plus（测速）"
+          fi
+          # 追加自定义包
+          if [ -n "${{ inputs.packages }}" ]; then
+            PKGS="$PKGS ${{ inputs.packages }}"
+            NAMES="$NAMES ${{ inputs.packages }}"
+          fi
+          echo "pkgs=${PKGS}" >> "$GITHUB_OUTPUT"
+          echo "names=${NAMES}" >> "$GITHUB_OUTPUT"
 
       - name: Resolve rootfs size
         id: rootfs
@@ -92,8 +150,7 @@ jobs:
             3G) SIZE=3072 ;;
             4G) SIZE=4096 ;;
           esac
-          echo "size=${SIZE}" >> "$GITHUB_OUTPUT"
-          echo "::notice::软件包空间: ${{ inputs.rootfs_partsize }} (${SIZE} MB)"
+          echo "size=${{ SIZE }}" >> "$GITHUB_OUTPUT"
 
       - name: Build OpenWrt firmware with ImageBuilder
         id: build
@@ -104,26 +161,41 @@ jobs:
           profile: ${{ inputs.profile }}
           rootfs_partsize: ${{ steps.rootfs.outputs.size }}
           lan_ip: ${{ inputs.custom_router_ip }}
-          packages: ${{ inputs.packages }}
+          packages: ${{ steps.plugins.outputs.pkgs }}
           root_password: ${{ inputs.root_password }}
           pppoe_account: ${{ secrets.PPPOE_ACCOUNT }}
           pppoe_password: ${{ secrets.PPPOE_PASSWORD }}
 
       - name: Create info
+        env:
+          ROOT_PASSWORD: ${{ inputs.root_password }}
         run: |
+          if [ -n "$ROOT_PASSWORD" ]; then
+            PASSWORD="$ROOT_PASSWORD"
+          else
+            PASSWORD="无（默认空密码）"
+          fi
           cat > ${{ github.workspace }}/router-info.md <<EOF
           ## 📡 路由器后台信息
 
-          - 🖥️ **设备架构**: ${{ inputs.arch }}
-          - ✳️ **PROFILE**: ${{ inputs.profile }}
-          - 🏠 **后台地址**: ${{ inputs.custom_router_ip }}
-          - 👤 **用户名**: root
-          - 🔑 **密码**: ${{ inputs.root_password != '' && inputs.root_password || '无' }}
-          - 📦 **OpenWrt 系列**: ${{ inputs.series }}
+          | 项目 | 值 |
+          | :--- | :--- |
+          | 🖥️ 设备架构 | ${{ inputs.arch }} |
+          | ✳️ PROFILE | ${{ inputs.profile }} |
+          | 🏠 后台地址 | ${{ inputs.custom_router_ip }} |
+          | 👤 用户名 | root |
+          | 🔑 密码 | ${PASSWORD} |
+          | 📦 OpenWrt 系列 | ${{ inputs.series }} |
           EOF
 
-          if [ -n "${{ inputs.packages }}" ]; then
-            echo -e "\n#### 额外插件: ${{ inputs.packages }}" >> ${{ github.workspace }}/router-info.md
+          NAMES="${{ steps.plugins.outputs.names }}"
+          if [ -n "$NAMES" ]; then
+            echo "" >> ${{ github.workspace }}/router-info.md
+            echo "## 🧩 已选插件" >> ${{ github.workspace }}/router-info.md
+            echo "" >> ${{ github.workspace }}/router-info.md
+            for p in $NAMES; do
+              echo "- $p" >> ${{ github.workspace }}/router-info.md
+            done
           fi
 
       - name: Upload firmware as release assets
