@@ -56,6 +56,11 @@ on:
         required: false
         type: string
         default: ''
+      root_password:
+        description: '设置固件 root 密码（留空则保持默认空密码）'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -100,6 +105,7 @@ jobs:
           rootfs_partsize: ${{ steps.rootfs.outputs.size }}
           lan_ip: ${{ inputs.custom_router_ip }}
           packages: ${{ inputs.packages }}
+          root_password: ${{ inputs.root_password }}
           pppoe_account: ${{ secrets.PPPOE_ACCOUNT }}
           pppoe_password: ${{ secrets.PPPOE_PASSWORD }}
 
@@ -112,7 +118,7 @@ jobs:
           - ✳️ **PROFILE**: ${{ inputs.profile }}
           - 🏠 **后台地址**: ${{ inputs.custom_router_ip }}
           - 👤 **用户名**: root
-          - 🔑 **密码**: 无
+          - 🔑 **密码**: ${{ inputs.root_password != '' && inputs.root_password || '无' }}
           - 📦 **OpenWrt 系列**: ${{ inputs.series }}
           EOF
 
