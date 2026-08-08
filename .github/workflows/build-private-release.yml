@@ -1,0 +1,122 @@
+# =============================================================================
+#  Build OpenWrt Firmware (Private / Self-hosted runner)
+# -----------------------------------------------------------------------------
+#  使用自建 self-hosted runner 构建，构建依赖已预装在机器上，
+#  无需在 workflow 中安装（比 GitHub 托管 runner 更快、可复用缓存）。
+#  - 设备：x86-64 / x86-generic / x86-geode / x86-legacy / rockchip-armv8
+#  - 版本：选择 24 或 25，自动检测官方最新版
+#  - 插件：Extras_Paclages 自动导入（24→ipk 分支，25→apk 分支）
+#  - PPPoE：仓库 Secrets 配置 PPPOE_ACCOUNT / PPPOE_PASSWORD
+# =============================================================================
+
+name: Build OpenWrt Firmware (Private)
+
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: '选择目标设备架构'
+        required: true
+        type: choice
+        default: 'x86-64'
+        options:
+          - 'x86-64'
+          - 'x86-generic'
+          - 'x86-geode'
+          - 'x86-legacy'
+          - 'rockchip-armv8'
+      series:
+        description: '选择 OpenWrt 系列（24=24.10 ipk / 25=25.12 apk）'
+        required: true
+        type: choice
+        default: '25'
+        options:
+          - '24'
+          - '25'
+      profile:
+        description: '设备 PROFILE（x86 用 generic；rockchip 填型号如 friendlyarm_nanopi-r4s）'
+        required: false
+        default: 'generic'
+      custom_router_ip:
+        description: "设置路由器的管理地址(仅对多网口路由器有效) 格式:192.168.x.1 或 10.x.x.1"
+        required: true
+        default: "192.168.100.1"
+      rootfs_partsize:
+        description: '选择软件包空间大小'
+        required: true
+        type: choice
+        default: '1G'
+        options:
+          - '1G'
+          - '2G'
+          - '3G'
+          - '4G'
+      packages:
+        description: '选择额外安装的外部插件，空格分隔（如 luci-app-openclash luci-app-passwall）'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Resolve rootfs size
+        id: rootfs
+        shell: bash
+        run: |
+          case "${{ inputs.rootfs_partsize }}" in
+            1G) SIZE=1024 ;;
+            2G) SIZE=2048 ;;
+            3G) SIZE=3072 ;;
+            4G) SIZE=4096 ;;
+          esac
+          echo "size=${SIZE}" >> "$GITHUB_OUTPUT"
+          echo "::notice::软件包空间: ${{ inputs.rootfs_partsize }} (${SIZE} MB)"
+
+      - name: Build OpenWrt firmware with ImageBuilder
+        id: build
+        uses: MinimaxFlora/gh-action-imagebuilder@v7.2
+        with:
+          arch: ${{ inputs.arch }}
+          version: ${{ inputs.series }}
+          profile: ${{ inputs.profile }}
+          rootfs_partsize: ${{ steps.rootfs.outputs.size }}
+          lan_ip: ${{ inputs.custom_router_ip }}
+          packages: ${{ inputs.packages }}
+          pppoe_account: ${{ secrets.PPPOE_ACCOUNT }}
+          pppoe_password: ${{ secrets.PPPOE_PASSWORD }}
+
+      - name: Create info
+        run: |
+          cat > ${{ github.workspace }}/router-info.md <<EOF
+          ## 📡 路由器后台信息
+
+          - 🖥️ **设备架构**: ${{ inputs.arch }}
+          - ✳️ **PROFILE**: ${{ inputs.profile }}
+          - 🏠 **后台地址**: ${{ inputs.custom_router_ip }}
+          - 👤 **用户名**: root
+          - 🔑 **密码**: 无
+          - 📦 **OpenWrt 系列**: ${{ inputs.series }}
+          EOF
+
+          if [ -n "${{ inputs.packages }}" ]; then
+            echo -e "\n#### 额外插件: ${{ inputs.packages }}" >> ${{ github.workspace }}/router-info.md
+          fi
+
+      - name: Upload firmware as release assets
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: Private-${{ inputs.arch }}
+          name: OpenWrt-${{ inputs.arch }}-${{ inputs.series }}-Private
+          body_path: ${{ github.workspace }}/router-info.md
+          files: |
+            ${{ steps.build.outputs.firmware_dir }}/**/*.img.gz
+            ${{ steps.build.outputs.firmware_dir }}/**/*.bin
