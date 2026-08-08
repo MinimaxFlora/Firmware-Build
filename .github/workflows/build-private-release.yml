@@ -112,7 +112,7 @@ jobs:
           fi
 
       - name: Upload firmware as release assets
-        uses: MinimaxFlora/action-gh-release@v1.0
+        uses: MinimaxFlora/action-gh-release@v1.0.1
         with:
           tag_name: Private-${{ inputs.arch }}
           name: OpenWrt-${{ inputs.arch }}-${{ inputs.series }}-Private
