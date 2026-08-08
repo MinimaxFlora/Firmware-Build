@@ -83,7 +83,7 @@ jobs:
 
       - name: Build OpenWrt firmware with ImageBuilder
         id: build
-        uses: MinimaxFlora/gh-action-imagebuilder@v7.2
+        uses: MinimaxFlora/gh-action-imagebuilder@v7.3
         with:
           arch: ${{ inputs.arch }}
           version: ${{ inputs.series }}
