@@ -20,7 +20,7 @@
 | 🚀 **云端编译** | 🔄 **版本自动检测** | 🧩 **第三方插件** |
 | GitHub Actions 构建，无需本地环境 | 自动拉取 OpenWrt 官方最新稳定版 | 自动导入 Extras_Paclages 插件 |
 | 📦 **多架构支持** | 🌐 **Web 服务器可选** | 🎨 **LuCI 主题定制** |
-| x86 全系 + Rockchip | uhttpd / nginx 自由切换 | 默认 argon 主题，可自定义 |
+| x86 全系 + Rockchip | uhttpd / nginx 自由切换 | 默认 argon 主题，5 种预设可选 |
 | 🔌 **PPPoE 拨号** | 🖥️ **预设后台 IP** | 📤 **自动发布 Release** |
 | 构建时写入宽带账号密码 | 首次启动自动设置管理地址 | 固件 + 后台信息自动发布 |
 
