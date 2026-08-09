@@ -5,6 +5,8 @@
 #  无需在 workflow 中安装（比 GitHub 托管 runner 更快、可复用缓存）。
 #  - 设备：x86-64 / x86-generic / x86-geode / x86-legacy / rockchip-armv8
 #  - 版本：选择 24 或 25，自动检测官方最新版
+#  - Web 服务器：uhttpd（默认）或 nginx
+#  - 主题：默认 luci-theme-argon + 中文设置包，可自定义
 #  - 插件：Extras_Paclages 自动导入（24→ipk 分支，25→apk 分支）
 #  - PPPoE：仓库 Secrets 配置 PPPOE_ACCOUNT / PPPOE_PASSWORD
 # =============================================================================
@@ -51,6 +53,19 @@ on:
           - '2G'
           - '3G'
           - '4G'
+      web_server:
+        description: 'Web 服务器：uhttpd（默认，装 luci）或 nginx（装 luci-nginx）'
+        required: true
+        type: choice
+        default: 'uhttpd'
+        options:
+          - 'uhttpd'
+          - 'nginx'
+      theme:
+        description: 'LuCI 主题（默认 argon + 中文设置包；可填其他主题包名，留空跳过）'
+        required: false
+        type: string
+        default: 'luci-theme-argon luci-i18n-argon-config-zh-cn'
       packages:
         description: '选择额外安装的外部插件，空格分隔（如 luci-app-openclash luci-app-passwall）'
         required: false
@@ -95,6 +110,8 @@ jobs:
           profile: ${{ inputs.profile }}
           rootfs_partsize: ${{ steps.rootfs.outputs.size }}
           lan_ip: ${{ inputs.custom_router_ip }}
+          web_server: ${{ inputs.web_server }}
+          theme: ${{ inputs.theme }}
           packages: ${{ inputs.packages }}
           root_password: ${{ inputs.root_password }}
           pppoe_account: ${{ secrets.PPPOE_ACCOUNT }}
@@ -111,8 +128,10 @@ jobs:
           - ✳️ **PROFILE**: ${{ inputs.profile }}
           - 🏠 **后台地址**: ${{ inputs.custom_router_ip }}
           - 👤 **用户名**: root
-          - 🔑 **密码**: ${ROOT_PASSWORD:-无}
+          - 🔑 **密码**: ${ROOT_PASSWORD:-（空）}
           - 📦 **OpenWrt 系列**: ${{ inputs.series }}
+          - 🌐 **Web 服务器**: ${{ inputs.web_server }}
+          - 🎨 **LuCI 主题**: ${{ inputs.theme }}
           EOF
 
           if [ -n "${{ inputs.packages }}" ]; then

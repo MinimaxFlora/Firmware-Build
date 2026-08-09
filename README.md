@@ -19,8 +19,10 @@
 | :--- | :--- | :--- |
 | 🚀 **云端编译** | 🔄 **版本自动检测** | 🧩 **第三方插件** |
 | GitHub Actions 构建，无需本地环境 | 自动拉取 OpenWrt 官方最新稳定版 | 自动导入 Extras_Paclages 插件 |
-| 📦 **多架构支持** | 🔌 **PPPoE 拨号** | 🖥️ **预设后台 IP** |
-| x86 全系 + Rockchip | 构建时写入宽带账号密码 | 首次启动自动设置管理地址 |
+| 📦 **多架构支持** | 🌐 **Web 服务器可选** | 🎨 **LuCI 主题定制** |
+| x86 全系 + Rockchip | uhttpd / nginx 自由切换 | 默认 argon 主题，可自定义 |
+| 🔌 **PPPoE 拨号** | 🖥️ **预设后台 IP** | 📤 **自动发布 Release** |
+| 构建时写入宽带账号密码 | 首次启动自动设置管理地址 | 固件 + 后台信息自动发布 |
 
 ---
 
@@ -32,7 +34,8 @@
 4. 等待构建完成（约 10-30 分钟）
 5. 在 **Releases** 页面下载固件
 
-> 💡 构建完成后固件自动发布到 Releases，包含完整的刷机镜像和校验文件。
+> 💡 构建完成后固件自动发布到 Releases，包含完整的刷机镜像和后台信息说明。
+> 另有 **Build OpenWrt Firmware (Private)** 工作流，使用自建 runner 加速构建。
 
 ---
 
@@ -45,7 +48,10 @@
 | **profile** | ❌ | `generic` | 设备 PROFILE（rockchip 填型号，如 `friendlyarm_nanopi-r4s`） |
 | **custom_router_ip** | ✅ | `192.168.100.1` | 路由器管理地址（仅多网口路由器有效） |
 | **rootfs_partsize** | ✅ | `1G` | 软件包分区大小：1G / 2G / 3G / 4G |
+| **web_server** | ✅ | `uhttpd` | Web 服务器：`uhttpd`（装 luci）或 `nginx`（装 luci-nginx + 自动配置） |
+| **theme** | ❌ | argon 主题包 | LuCI 主题，默认 `luci-theme-argon luci-i18n-argon-config-zh-cn`，可填其他主题 |
 | **packages** | ❌ | *(空)* | 额外插件，空格分隔（如 `luci-app-openclash luci-app-passwall`） |
+| **root_password** | ❌ | *(空)* | 固件 root 密码（留空则保持默认空密码） |
 
 ---
 
@@ -72,17 +78,39 @@
 
 ---
 
+## 🌐 Web 服务器选择
+
+| 选项 | 安装包 | 说明 |
+| :--- | :--- | :--- |
+| `uhttpd`（默认） | `luci` | 系统默认 Web 服务器，轻量稳定 |
+| `nginx` | `luci-nginx` | 高性能 Nginx，首次启动自动写入监听 80 / conf.d 包含等配置 |
+
+> 选 nginx 时固件首次开机自动执行完整的 nginx uci 配置并重启服务，无需手动设置。
+
+---
+
+## 🎨 LuCI 主题定制
+
+默认安装 **argon 主题 + 中文设置包**（`luci-theme-argon luci-i18n-argon-config-zh-cn`）。
+
+- 换主题：在 `theme` 参数填包名即可，如 `luci-theme-bootstrap` / `luci-theme-material`
+- 组合安装：空格分隔多个主题包
+- 留空：跳过主题安装
+
+---
+
 ## 📦 构建产物
 
 固件发布在 **Releases** 页面，tag 格式：
 
 ```
-Autobuild-<架构>
+Autobuild-<架构>          # 云端构建
+Private-<架构>            # 自建 runner 构建
 ```
 
 每个 Release 包含：
 - 📥 刷机镜像（`.img.gz` / `.bin`）
-- 📋 后台信息说明（管理地址 / 账号密码 / 已装插件）
+- 📋 后台信息说明（管理地址 / 账号密码 / Web 服务器 / 主题 / 已装插件）
 
 ---
 
@@ -98,7 +126,10 @@ workflow_dispatch 手动触发
 官方下载 ImageBuilder ──▶ 解压
         │
         ▼
-写入 uci-defaults（LAN IP / PPPoE / 作者信息）
+写入 uci-defaults（LAN IP / PPPoE / nginx / root 密码 / 作者信息）
+        │
+        ▼
+组装软件包（默认包 + Web 服务器 + 主题 + 额外插件）
         │
         ▼
 导入 Extras_Paclages 第三方插件（ipk / apk / .run）
