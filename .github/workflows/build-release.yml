@@ -62,10 +62,17 @@ on:
           - 'uhttpd'
           - 'nginx'
       theme:
-        description: 'LuCI 主题（默认 argon + 中文设置包；可填其他主题包名，留空跳过）'
-        required: false
-        type: string
-        default: 'luci-theme-argon luci-i18n-argon-config-zh-cn'
+        description: '选择 LuCI 主题（Argon 默认）'
+        required: true
+        type: choice
+        default: 'argon'
+        options:
+          - 'argon'
+          - 'kucat'
+          - 'aurora'
+          - 'design'
+          - 'shadcn'
+          - ''
       packages:
         description: '选择额外安装的外部插件，空格分隔（如 luci-app-openclash luci-app-passwall）'
         required: false
