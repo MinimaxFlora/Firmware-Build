@@ -49,7 +49,7 @@
 | **custom_router_ip** | ✅ | `192.168.100.1` | 路由器管理地址（仅多网口路由器有效） |
 | **rootfs_partsize** | ✅ | `1G` | 软件包分区大小：1G / 2G / 3G / 4G |
 | **web_server** | ✅ | `uhttpd` | Web 服务器：`uhttpd`（装 luci）或 `nginx`（装 luci-nginx + 自动配置） |
-| **theme** | ✅ | `argon` | LuCI 主题预设：`argon` / `kucat` / `aurora` / `design` / `shadcn`（可留空跳过） |
+| **theme** | ✅ | `argon` | LuCI 主题预设：`argon` / `kucat` / `aurora` / `design` / `shadcn`（不设置默认 argon） |
 | **packages** | ❌ | *(空)* | 额外插件，空格分隔（如 `luci-app-openclash luci-app-passwall`） |
 | **root_password** | ❌ | *(空)* | 固件 root 密码（留空则保持默认空密码） |
 
@@ -91,7 +91,7 @@
 
 ## 🎨 LuCI 主题定制
 
-预设主题（默认 `argon`），下拉选择即可：
+预设主题（默认 `argon`，不设置即 argon），下拉选择即可：
 
 | 预设 | 安装包 |
 | :--- | :--- |
@@ -100,8 +100,6 @@
 | `aurora` | `luci-theme-aurora` + `luci-i18n-aurora-config-zh-cn` |
 | `design` | `luci-theme-design` |
 | `shadcn` | `luci-theme-shadcn` |
-
-- 留空：跳过主题安装
 
 ---
 

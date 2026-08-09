@@ -62,7 +62,7 @@ on:
           - 'uhttpd'
           - 'nginx'
       theme:
-        description: '选择 LuCI 主题（Argon 默认）'
+        description: '选择 LuCI 主题（默认 Argon）'
         required: true
         type: choice
         default: 'argon'
@@ -72,7 +72,6 @@ on:
           - 'aurora'
           - 'design'
           - 'shadcn'
-          - ''
       packages:
         description: '选择额外安装的外部插件，空格分隔（如 luci-app-openclash luci-app-passwall）'
         required: false
