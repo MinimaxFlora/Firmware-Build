@@ -100,7 +100,7 @@
 | `aurora` | `luci-theme-aurora` + `luci-i18n-aurora-config-zh-cn` |
 | `design` | `luci-theme-design` |
 | `shadcn` | `luci-theme-shadcn` |
-| `fluent` | `luci-theme-fluent` |
+| `fluent` | `luci-theme-fluent` + `luci-i18n-fluent-zh-cn` |
 
 ---
 
