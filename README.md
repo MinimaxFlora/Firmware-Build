@@ -20,7 +20,7 @@
 | 🚀 **云端编译** | 🔄 **版本自动检测** | 🧩 **第三方插件** |
 | GitHub Actions 构建，无需本地环境 | 自动拉取 OpenWrt 官方最新稳定版 | 自动导入 Extras_Paclages 插件 |
 | 📦 **多架构支持** | 🌐 **Web 服务器可选** | 🎨 **LuCI 主题定制** |
-| x86 全系 + Rockchip | uhttpd / nginx 自由切换 | 默认 argon 主题，5 种预设可选 |
+| x86 全系 + Rockchip | uhttpd / nginx 自由切换 | 默认 argon 主题，6 种预设可选 |
 | 🔌 **PPPoE 拨号** | 🖥️ **预设后台 IP** | 📤 **自动发布 Release** |
 | 构建时写入宽带账号密码 | 首次启动自动设置管理地址 | 固件 + 后台信息自动发布 |
 
@@ -49,7 +49,7 @@
 | **custom_router_ip** | ✅ | `192.168.100.1` | 路由器管理地址（仅多网口路由器有效） |
 | **rootfs_partsize** | ✅ | `1G` | 软件包分区大小：1G / 2G / 3G / 4G |
 | **web_server** | ✅ | `uhttpd` | Web 服务器：`uhttpd`（装 luci）或 `nginx`（装 luci-nginx + 自动配置） |
-| **theme** | ✅ | `argon` | LuCI 主题预设：`argon` / `kucat` / `aurora` / `design` / `shadcn`（不设置默认 argon） |
+| **theme** | ✅ | `argon` | LuCI 主题预设：`argon` / `kucat` / `aurora` / `design` / `shadcn` / `fluent`（不设置默认 argon） |
 | **packages** | ❌ | *(空)* | 额外插件，空格分隔（如 `luci-app-openclash luci-app-passwall`） |
 | **root_password** | ❌ | *(空)* | 固件 root 密码（留空则保持默认空密码） |
 
@@ -100,6 +100,7 @@
 | `aurora` | `luci-theme-aurora` + `luci-i18n-aurora-config-zh-cn` |
 | `design` | `luci-theme-design` |
 | `shadcn` | `luci-theme-shadcn` |
+| `fluent` | `luci-theme-fluent` |
 
 ---
 

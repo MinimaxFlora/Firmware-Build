@@ -72,6 +72,7 @@ on:
           - 'aurora'
           - 'design'
           - 'shadcn'
+          - 'fluent'
       packages:
         description: '选择额外安装的外部插件，空格分隔（如 luci-app-openclash luci-app-passwall）'
         required: false
