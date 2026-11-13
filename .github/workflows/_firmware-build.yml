@@ -147,6 +147,33 @@ jobs:
           esac
           python3 .github/scripts/check_feed_packages.py "$SERIES" "$FEED_HOST" "$FOLDER" $PACKAGES
 
+      # 2b. 自动补简体中文语言包 ------------------------------------------
+      # action 自带 luci-i18n-base/firewall/ttyd 和主题翻译，但各插件的
+      # luci-i18n-<app>-zh-cn 不会自动加，界面就会变成「中文导航 + 英文插件页」。
+      # 这里按请求的 luci-app-* 去 feed 里找对应语言包，找到就一起装。
+      - name: Resolve Chinese language packs
+        id: i18n
+        shell: bash
+        env:
+          ARCH: ${{ inputs.arch }}
+          SERIES: ${{ inputs.series }}
+          PACKAGES: ${{ inputs.packages }}
+          FEED_HOST: ${{ inputs.feed_host }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PACKAGES:-}" ]; then
+            echo "extra=" >> "$GITHUB_OUTPUT"
+            echo "没有额外插件，跳过中文语言包解析"
+            exit 0
+          fi
+          case "$ARCH" in
+            x86-*) FOLDER=x86_64 ;;
+            rockchip-armv8) FOLDER=aarch64_generic ;;
+          esac
+          EXTRA=$(python3 .github/scripts/resolve_i18n.py "$SERIES" "$FEED_HOST" "$FOLDER" $PACKAGES)
+          echo "extra=$EXTRA" >> "$GITHUB_OUTPUT"
+          echo "本次自动加入的中文语言包：${EXTRA:-无}"
+
       # 3. 软件包分区大小 --------------------------------------------------
       - name: Resolve rootfs size
         id: rootfs
@@ -179,7 +206,7 @@ jobs:
           lan_ip: ${{ inputs.lan_ip }}
           web_server: ${{ inputs.web_server }}
           theme: ${{ inputs.theme }}
-          packages: ${{ inputs.packages }}
+          packages: ${{ inputs.packages }} ${{ steps.i18n.outputs.extra }}
           root_password: ${{ inputs.root_password }}
           feed_host: ${{ inputs.feed_host }}
           pppoe_account: ${{ secrets.PPPOE_ACCOUNT }}
@@ -190,7 +217,7 @@ jobs:
         shell: bash
         env:
           MANIFEST: ${{ steps.build.outputs.manifest_path }}
-          PACKAGES: ${{ inputs.packages }}
+          PACKAGES: ${{ inputs.packages }} ${{ steps.i18n.outputs.extra }}
           THEME: ${{ inputs.theme }}
           WEB: ${{ inputs.web_server }}
         run: |

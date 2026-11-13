@@ -12,11 +12,11 @@
 .github/
 ├── scripts/
 │   ├── check_feed_packages.py   # 构建前：插件是否真的在 feed 里
+│   ├── resolve_i18n.py          # 自动补 luci-i18n-<app>-zh-cn 中文语言包
 │   └── verify_manifest.py       # 构建后：插件是否真的进了固件
 └── workflows/
-    ├── _firmware-build.yml        # 可复用主流程（workflow_call），所有逻辑都在这里
-    ├── build-release.yml          # GitHub 托管 runner 入口（tag 前缀 Autobuild）
-    └── build-private-release.yml  # self-hosted runner 入口（tag 前缀 Private）
+    ├── _firmware-build.yml      # 可复用主流程（workflow_call），所有逻辑都在这里
+    └── build-release.yml        # 对外入口（tag 前缀 Autobuild）
 ```
 
 两个入口只负责输入表单，构建逻辑共用一份，避免两套流程各改各的漂移。
@@ -27,6 +27,7 @@
 |---|---|
 | 1. 校验输入 | x86 必须 `profile=generic`、rockchip 必须填具体型号、主题/Web 服务器在允许列表内、管理地址格式合法 —— 几秒内失败，不浪费一次构建 |
 | 2. 校验插件 | 拉 `Extras_Paclages` 索引（`apk/<arch>/index.json` 或 `ipk/<arch>/Packages`），逐个确认请求的插件真的存在；拼错的包名在这里就点名报错 |
+| 2b. 补中文 | 按请求的 `luci-app-*` 自动挑出 `luci-i18n-<app>-zh-cn`（外加 base / firewall 基础语言包）一起装，避免「中文导航 + 英文插件页」 |
 | 3. 构建 | 调 ImageBuilder：自动取该系列最新稳定版，套用 Web 服务器、主题、默认管理地址、root 密码、PPPoE |
 | 4. 产物断言 | 读 ImageBuilder 生成的 `.manifest`，逐个确认插件、主题包、Web 服务器包**真的进了固件**（不是"编译成功"就算数） |
 | 5. 校验和 + 摘要 | 生成 `SHA256SUMS`，并把架构 / 系列 / 主题 / 插件 / 镜像体积 / sha256 写进 Job Summary |
@@ -64,6 +65,9 @@ packages          luci-app-homeproxy luci-app-nikki luci-app-mosdns luci-app-soc
 ```
 
 > `luci-app-quickfile` 依赖 nginx，所以这里显式选 `nginx`；即使忘了选，构建脚本也会自动切换并打印提示。
+>
+> 中文语言包不用手填：填了 `luci-app-homeproxy` 就会自动带上 `luci-i18n-homeproxy-zh-cn`，
+> 其余同理（`luci-i18n-base-zh-cn` / `luci-i18n-firewall-zh-cn` 也会一并补上）。
 
 ### Secrets
 
@@ -94,5 +98,3 @@ sha256sum -c SHA256SUMS
 **构建成功但固件里没这个包** —— 第 4 步用 `.manifest` 断言并列出缺失项，通常是依赖冲突（比如被 `CONFLICTS` 顶掉）。
 
 **想换插件源（CDN）** —— 主流程支持 `feed_host` 输入，默认 `https://raw.githubusercontent.com/MinimaxFlora/Extras_Paclages`，可换成 jsDelivr 之类镜像。
-
-**想跑在自建 runner** —— 用 `Build OpenWrt Firmware (Private)`，它复用同一套流程，只是 `runs-on: self-hosted` 且跳过依赖安装。
