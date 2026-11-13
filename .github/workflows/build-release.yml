@@ -1,14 +1,13 @@
 # =============================================================================
-#  Build OpenWrt Firmware
+#  Build OpenWrt Firmware（GitHub 托管 runner）
 # -----------------------------------------------------------------------------
-#  通过 MinimaxFlora/gh-action-imagebuilder 一键构建定制 OpenWrt 固件。
+#  真正的构建逻辑在 .github/workflows/_firmware-build.yml（可复用流程），
+#  这里只负责对外的输入表单，方便和 self-hosted 版本共用一套逻辑。
+#
 #  - 设备：x86-64 / x86-generic / x86-geode / x86-legacy / rockchip-armv8
-#  - 版本：选择 24 或 25，自动检测仓库最新 v24.* / v25.* release
-#  - Web 服务器：uhttpd（默认）或 nginx
-#  - 主题：默认 luci-theme-argon + 中文设置包，可自定义
-#  - 插件：Extras_Paclages 自动导入（24→ipk 分支，25→apk 分支）
-#  - PPPoE：仓库 Secrets 配置 PPPOE_ACCOUNT / PPPOE_PASSWORD
-#           （两个都设置才启用拨号，否则 WAN 保持 DHCP）
+#  - 系列：24（opkg/ipk）或 25（apk），自动取该系列最新稳定版
+#  - 插件：Extras_Paclages（24→ipk 分支，25→apk 分支）里已发布的包
+#  - PPPoE：Secrets 里配 PPPOE_ACCOUNT / PPPOE_PASSWORD（都配才启用）
 # =============================================================================
 
 name: Build OpenWrt Firmware
@@ -40,11 +39,11 @@ on:
         required: false
         default: 'generic'
       custom_router_ip:
-        description: "设置路由器的管理地址(仅对多网口路由器有效) 格式:192.168.x.1 或 10.x.x.1"
+        description: '默认管理地址（格式 192.168.x.1 / 10.x.x.1）'
         required: true
-        default: "192.168.100.1"
+        default: '192.168.100.1'
       rootfs_partsize:
-        description: '选择软件包空间大小'
+        description: '软件包分区大小'
         required: true
         type: choice
         default: '1G'
@@ -54,7 +53,7 @@ on:
           - '3G'
           - '4G'
       web_server:
-        description: 'Web 服务器：uhttpd（默认，装 luci）或 nginx（装 luci-nginx）'
+        description: 'Web 服务器：uhttpd（默认）或 nginx（luci-app-quickfile 需要 nginx）'
         required: true
         type: choice
         default: 'uhttpd'
@@ -62,7 +61,7 @@ on:
           - 'uhttpd'
           - 'nginx'
       theme:
-        description: '选择 LuCI 主题（默认 Argon）'
+        description: 'LuCI 主题'
         required: true
         type: choice
         default: 'argon'
@@ -74,12 +73,12 @@ on:
           - 'shadcn'
           - 'fluent'
       packages:
-        description: '选择额外安装的外部插件，空格分隔（如 luci-app-openclash luci-app-passwall）'
+        description: '额外插件（空格分隔，必须是 Extras_Paclages 里已发布的包）'
         required: false
         type: string
         default: ''
       root_password:
-        description: '设置固件 root 密码（留空则保持默认空密码）'
+        description: '固件 root 密码（留空=空密码；设置后不发布 Release，只留在 artifact）'
         required: false
         type: string
         default: ''
@@ -87,79 +86,25 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: firmware-${{ inputs.arch }}-${{ inputs.series }}
+  cancel-in-progress: true
+
 jobs:
   build:
-    runs-on: ubuntu-24.04
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Install ImageBuilder build dependencies
-        shell: bash
-        run: |
-          sudo apt-get update -qq || true
-          sudo apt-get install -y -qq \
-            build-essential file libncurses-dev zlib1g-dev gawk git \
-            gettext libssl-dev xsltproc rsync wget unzip \
-            python3 python3-setuptools zstd
-
-      - name: Resolve rootfs size
-        id: rootfs
-        shell: bash
-        run: |
-          case "${{ inputs.rootfs_partsize }}" in
-            1G) SIZE=1024 ;;
-            2G) SIZE=2048 ;;
-            3G) SIZE=3072 ;;
-            4G) SIZE=4096 ;;
-          esac
-          echo "size=${SIZE}" >> "$GITHUB_OUTPUT"
-          echo "::notice::软件包空间: ${{ inputs.rootfs_partsize }} (${SIZE} MB)"
-
-      - name: Build OpenWrt firmware with ImageBuilder
-        id: build
-        uses: MinimaxFlora/gh-action-imagebuilder@v8.1
-        with:
-          arch: ${{ inputs.arch }}
-          version: ${{ inputs.series }}
-          profile: ${{ inputs.profile }}
-          rootfs_partsize: ${{ steps.rootfs.outputs.size }}
-          lan_ip: ${{ inputs.custom_router_ip }}
-          web_server: ${{ inputs.web_server }}
-          theme: ${{ inputs.theme }}
-          packages: ${{ inputs.packages }}
-          root_password: ${{ inputs.root_password }}
-          pppoe_account: ${{ secrets.PPPOE_ACCOUNT }}
-          pppoe_password: ${{ secrets.PPPOE_PASSWORD }}
-
-      - name: Create info
-        env:
-          ROOT_PASSWORD: ${{ inputs.root_password }}
-        run: |
-          cat > ${{ github.workspace }}/router-info.md <<EOF
-          ## 📡 路由器后台信息
-
-          - 🖥️ **设备架构**: ${{ inputs.arch }}
-          - ✳️ **PROFILE**: ${{ inputs.profile }}
-          - 🏠 **后台地址**: ${{ inputs.custom_router_ip }}
-          - 👤 **用户名**: root
-          - 🔑 **密码**: ${ROOT_PASSWORD:-（空）}
-          - 📦 **OpenWrt 系列**: ${{ inputs.series }}
-          - 🌐 **Web 服务器**: ${{ inputs.web_server }}
-          - 🎨 **LuCI 主题**: ${{ inputs.theme }}
-          EOF
-
-          if [ -n "${{ inputs.packages }}" ]; then
-            echo -e "\n#### 额外插件: ${{ inputs.packages }}" >> ${{ github.workspace }}/router-info.md
-          fi
-
-      - name: Upload firmware as release assets
-        uses: MinimaxFlora/action-gh-release@v1.0
-        with:
-          tag_name: Autobuild-${{ inputs.arch }}
-          name: OpenWrt-${{ inputs.arch }}-${{ inputs.series }}
-          body_path: ${{ github.workspace }}/router-info.md
-          files: |
-            ${{ steps.build.outputs.firmware_dir }}/**/*.img.gz
-            ${{ steps.build.outputs.firmware_dir }}/**/*.bin
+    name: Firmware
+    uses: ./.github/workflows/_firmware-build.yml
+    with:
+      arch: ${{ inputs.arch }}
+      series: ${{ inputs.series }}
+      profile: ${{ inputs.profile }}
+      lan_ip: ${{ inputs.custom_router_ip }}
+      rootfs_partsize: ${{ inputs.rootfs_partsize }}
+      web_server: ${{ inputs.web_server }}
+      theme: ${{ inputs.theme }}
+      packages: ${{ inputs.packages }}
+      root_password: ${{ inputs.root_password }}
+      tag_prefix: Autobuild
+      runs_on: ubuntu-24.04
+      install_deps: true
+    secrets: inherit

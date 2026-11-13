@@ -1,0 +1,304 @@
+# =============================================================================
+#  Firmware Build · 可复用主流程（由 build-release / build-private-release 调用）
+# -----------------------------------------------------------------------------
+#  流程：校验输入 → 校验插件真的在 feed 里 → ImageBuilder 构建
+#        → 用 manifest 断言插件真的进了固件 → SHA256SUMS + 构建摘要
+#        → 先传 artifact，再发 Release
+#
+#  原则：
+#   - 能提前失败的绝不留到 30 分钟后：插件名写错在这里几秒就报
+#   - 断言只看事实：manifest 里没有的包 = 没进固件，直接失败并点名
+#   - 产物 / manifest / 校验和都进 artifact，构建失败也能下来查
+# =============================================================================
+
+name: Firmware Build (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      arch:
+        description: '目标架构（x86-64 / x86-generic / x86-geode / x86-legacy / rockchip-armv8）'
+        required: true
+        type: string
+      series:
+        description: 'OpenWrt 系列：24（opkg/ipk）或 25（apk）'
+        required: true
+        type: string
+      profile:
+        description: 'ImageBuilder PROFILE（x86 用 generic）'
+        required: true
+        type: string
+      lan_ip:
+        description: '默认管理地址'
+        required: true
+        type: string
+      rootfs_partsize:
+        description: '软件包分区大小（1G/2G/3G/4G 或 MB 数字）'
+        required: true
+        type: string
+      web_server:
+        description: 'uhttpd 或 nginx'
+        required: true
+        type: string
+      theme:
+        description: 'LuCI 主题预设'
+        required: true
+        type: string
+      packages:
+        description: '额外插件，空格分隔'
+        required: false
+        type: string
+        default: ''
+      root_password:
+        description: '固件 root 密码（留空=空密码；设置后不发布 Release）'
+        required: false
+        type: string
+        default: ''
+      tag_prefix:
+        description: 'Release tag 前缀（Autobuild / Private）'
+        required: true
+        type: string
+      runs_on:
+        description: '运行器：ubuntu-24.04 或 self-hosted'
+        required: false
+        type: string
+        default: 'ubuntu-24.04'
+      install_deps:
+        description: '是否安装构建依赖（self-hosted 可关）'
+        required: false
+        type: boolean
+        default: true
+      feed_host:
+        description: 'Extras_Paclages 源地址（不带尾部斜杠）'
+        required: false
+        type: string
+        default: 'https://raw.githubusercontent.com/MinimaxFlora/Extras_Paclages'
+    secrets:
+      PPPOE_ACCOUNT:
+        required: false
+      PPPOE_PASSWORD:
+        required: false
+
+jobs:
+  build:
+    name: Build ${{ inputs.arch }} @ ${{ inputs.series }}
+    runs-on: ${{ inputs.runs_on }}
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install ImageBuilder build dependencies
+        if: ${{ inputs.install_deps }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            build-essential file libncurses-dev zlib1g-dev gawk git \
+            gettext libssl-dev xsltproc rsync wget unzip \
+            python3 python3-setuptools zstd
+
+      # 1. 输入自洽性 ------------------------------------------------------
+      - name: Validate inputs
+        shell: bash
+        env:
+          ARCH: ${{ inputs.arch }}
+          SERIES: ${{ inputs.series }}
+          PROFILE: ${{ inputs.profile }}
+          WEB: ${{ inputs.web_server }}
+          THEME: ${{ inputs.theme }}
+          LAN: ${{ inputs.lan_ip }}
+        run: |
+          set -euo pipefail
+          fail=0
+          case "$ARCH" in
+            x86-64|x86-generic|x86-geode|x86-legacy)
+              [ "$PROFILE" = "generic" ] || { echo "::error::x86 系的 PROFILE 必须是 generic（当前 $PROFILE）"; fail=1; } ;;
+            rockchip-armv8)
+              [ "$PROFILE" != "generic" ] || { echo "::error::rockchip-armv8 必须填具体型号，如 friendlyarm_nanopi-r4s"; fail=1; } ;;
+            *) echo "::error::不支持的 arch：$ARCH"; fail=1 ;;
+          esac
+          case "$SERIES" in 24|25) ;; *) echo "::error::series 只能是 24 或 25（当前 $SERIES）"; fail=1 ;; esac
+          case "$WEB" in uhttpd|nginx) ;; *) echo "::error::web_server 只能是 uhttpd 或 nginx（当前 $WEB）"; fail=1 ;; esac
+          case "$THEME" in argon|vantage|aurora|design|shadcn|fluent) ;;
+            *) echo "::error::theme 不支持：$THEME"; fail=1 ;; esac
+          if ! printf '%s' "$LAN" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$'; then
+            echo "::error::默认管理地址格式不对：$LAN（示例 192.168.1.1）"; fail=1
+          fi
+          [ "$fail" -eq 0 ] || exit 1
+          echo "输入校验通过：arch=$ARCH series=$SERIES profile=$PROFILE web=$WEB theme=$THEME lan=$LAN"
+
+      # 2. 插件存在性（查 Extras_Paclages 索引）---------------------------
+      - name: Verify requested packages exist in feed
+        if: ${{ inputs.packages != '' }}
+        shell: bash
+        env:
+          ARCH: ${{ inputs.arch }}
+          SERIES: ${{ inputs.series }}
+          PACKAGES: ${{ inputs.packages }}
+          FEED_HOST: ${{ inputs.feed_host }}
+        run: |
+          set -euo pipefail
+          case "$ARCH" in
+            x86-*) FOLDER=x86_64 ;;
+            rockchip-armv8) FOLDER=aarch64_generic ;;
+          esac
+          python3 .github/scripts/check_feed_packages.py "$SERIES" "$FEED_HOST" "$FOLDER" $PACKAGES
+
+      # 3. 软件包分区大小 --------------------------------------------------
+      - name: Resolve rootfs size
+        id: rootfs
+        shell: bash
+        env:
+          PARTSIZE: ${{ inputs.rootfs_partsize }}
+        run: |
+          set -euo pipefail
+          case "$PARTSIZE" in
+            1G|1024) SIZE=1024 ;;
+            2G|2048) SIZE=2048 ;;
+            3G|3072) SIZE=3072 ;;
+            4G|4096) SIZE=4096 ;;
+            '') SIZE=1024 ;;
+            *) if printf '%s' "$PARTSIZE" | grep -Eq '^[0-9]+$'; then SIZE="$PARTSIZE";
+               else echo "::error::rootfs_partsize 无法识别：$PARTSIZE"; exit 1; fi ;;
+          esac
+          echo "size=${SIZE}" >> "$GITHUB_OUTPUT"
+          echo "软件包分区：${SIZE} MB"
+
+      # 4. 构建 ------------------------------------------------------------
+      - name: Build firmware (ImageBuilder)
+        id: build
+        uses: MinimaxFlora/gh-action-imagebuilder@v8.1
+        with:
+          arch: ${{ inputs.arch }}
+          version: ${{ inputs.series }}
+          profile: ${{ inputs.profile }}
+          rootfs_partsize: ${{ steps.rootfs.outputs.size }}
+          lan_ip: ${{ inputs.lan_ip }}
+          web_server: ${{ inputs.web_server }}
+          theme: ${{ inputs.theme }}
+          packages: ${{ inputs.packages }}
+          root_password: ${{ inputs.root_password }}
+          feed_host: ${{ inputs.feed_host }}
+          pppoe_account: ${{ secrets.PPPOE_ACCOUNT }}
+          pppoe_password: ${{ secrets.PPPOE_PASSWORD }}
+
+      # 5. 产物断言（manifest）-------------------------------------------
+      - name: Verify manifest contains requested packages
+        shell: bash
+        env:
+          MANIFEST: ${{ steps.build.outputs.manifest_path }}
+          PACKAGES: ${{ inputs.packages }}
+          THEME: ${{ inputs.theme }}
+          WEB: ${{ inputs.web_server }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/verify_manifest.py "$MANIFEST" "$PACKAGES" "$THEME" "$WEB"
+
+      # 6. 校验和 + 摘要 ---------------------------------------------------
+      - name: Checksums and build summary
+        shell: bash
+        env:
+          FIRMWARE_DIR: ${{ steps.build.outputs.firmware_dir }}
+          MAIN_SHA: ${{ steps.build.outputs.main_image_sha256 }}
+          MANIFEST: ${{ steps.build.outputs.manifest_path }}
+          ARCH: ${{ inputs.arch }}
+          SERIES: ${{ inputs.series }}
+          PROFILE: ${{ inputs.profile }}
+          LAN: ${{ inputs.lan_ip }}
+          WEB: ${{ inputs.web_server }}
+          THEME: ${{ inputs.theme }}
+          PACKAGES: ${{ inputs.packages }}
+          ROOT_PASSWORD: ${{ inputs.root_password }}
+        run: |
+          set -euo pipefail
+          cd "$FIRMWARE_DIR"
+          find . -type f \( -name '*.img.gz' -o -name '*.bin' \) -print0 \
+            | sort -z | xargs -0 -r sha256sum > SHA256SUMS
+          echo "=== 校验和 ==="; cat SHA256SUMS
+
+          images=$(find . -type f \( -name '*.img.gz' -o -name '*.bin' \) | sort)
+          count=$(printf '%s\n' "$images" | grep -c . || true)
+          total=$(find . -type f \( -name '*.img.gz' -o -name '*.bin' \) -printf '%s\n' \
+                  | awk '{s+=$1} END {printf "%.0f", s/1048576}')
+          pkgs=$(wc -l < "$MANIFEST")
+          if [ -n "${ROOT_PASSWORD:-}" ]; then pw="已设置"; else pw="空密码"; fi
+
+          {
+            echo "## 📦 固件构建结果"
+            echo
+            echo "| 项目 | 值 |"
+            echo "| --- | --- |"
+            echo "| 架构 / PROFILE | \`$ARCH\` / \`$PROFILE\` |"
+            echo "| OpenWrt 系列 | $SERIES |"
+            echo "| Web 服务器 | \`$WEB\` |"
+            echo "| LuCI 主题 | \`$THEME\` |"
+            echo "| 默认管理地址 | \`$LAN\` |"
+            echo "| root 密码 | $pw |"
+            echo "| 镜像数量 / 体积 | ${count:-0} 个 / ${total:-0} MB |"
+            echo "| 固件内软件包 | ${pkgs} 个 |"
+            echo "| 主镜像 sha256 | \`${MAIN_SHA:-未知}\` |"
+            echo "| 额外插件 | ${PACKAGES:-无} |"
+            echo
+            echo "### 镜像文件"
+            echo '```'
+            for f in $images; do printf '%s  %s\n' "$(du -h "$f" | cut -f1)" "$f"; done
+            echo '```'
+          } > "$GITHUB_STEP_SUMMARY"
+
+          {
+            echo "## 📡 路由器后台信息"
+            echo
+            echo "- 🖥️ 设备架构：\`$ARCH\`（PROFILE \`$PROFILE\`）"
+            echo "- 🏠 后台地址：\`$LAN\`"
+            echo "- 👤 用户名：root"
+            echo "- 🔑 密码：$pw"
+            echo "- 📦 OpenWrt 系列：$SERIES"
+            echo "- 🌐 Web 服务器：\`$WEB\`"
+            echo "- 🎨 LuCI 主题：\`$THEME\`"
+            echo "- 🧩 额外插件：${PACKAGES:-无}"
+            echo
+            echo "### 烧录后校验（可选）"
+            echo '```'
+            echo "sha256sum -c SHA256SUMS"
+            echo '```'
+          } > "$GITHUB_WORKSPACE/router-info.md"
+
+      # 7. 先传 artifact，再发 Release ------------------------------------
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: firmware-${{ inputs.arch }}-${{ inputs.series }}
+          path: |
+            ${{ steps.build.outputs.firmware_dir }}/**/*.img.gz
+            ${{ steps.build.outputs.firmware_dir }}/**/*.bin
+            ${{ steps.build.outputs.firmware_dir }}/SHA256SUMS
+            ${{ steps.build.outputs.manifest_path }}
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Publish release
+        if: ${{ success() && inputs.root_password == '' }}
+        uses: MinimaxFlora/action-gh-release@v1.0
+        with:
+          tag_name: ${{ inputs.tag_prefix }}-${{ inputs.arch }}
+          name: OpenWrt-${{ inputs.arch }}-${{ inputs.series }}-${{ inputs.theme }}
+          body_path: ${{ github.workspace }}/router-info.md
+          files: |
+            ${{ steps.build.outputs.firmware_dir }}/**/*.img.gz
+            ${{ steps.build.outputs.firmware_dir }}/**/*.bin
+            ${{ steps.build.outputs.firmware_dir }}/SHA256SUMS
+
+      - name: Note (release skipped)
+        if: ${{ success() && inputs.root_password != '' }}
+        shell: bash
+        run: |
+          echo "::notice::设置了 root 密码，固件只留在 artifact（firmware-${{ inputs.arch }}-${{ inputs.series }}），不发布 Release"
+          {
+            echo
+            echo "### ⚠️ 未发布 Release"
+            echo "本次设置了 root 密码，成品只在 artifact 里，避免带密码的固件被公开分发。"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,155 +1,98 @@
-<div align="center">
+# Firmware-Build
 
-# 📡 Firmware-Build
+用官方 **ImageBuilder** 一键产出定制 OpenWrt 固件的 GitHub Actions 工程：选架构、选系列、勾主题、填插件，点一次 `Run workflow` 就出可刷机镜像。
 
-### OpenWrt 定制固件一键构建 · 云端编译 · 开箱即用
-
-![GitHub release](https://img.shields.io/github/v/release/MinimaxFlora/Firmware-Build?style=for-the-badge&logo=github&color=blue)
-![GitHub stars](https://img.shields.io/github/stars/MinimaxFlora/Firmware-Build?style=for-the-badge&color=yellow)
-![OpenWrt](https://img.shields.io/badge/OpenWrt-24.10%20%7C%2025.12-00A98F?style=for-the-badge&logo=openwrt&logoColor=white)
-![Platform](https://img.shields.io/badge/平台-GitHub%20Actions-8A2BE2?style=for-the-badge)
-
-</div>
+底层构建由 [`MinimaxFlora/gh-action-imagebuilder`](https://github.com/MinimaxFlora/gh-action-imagebuilder) 完成（免 Docker，直接下载 `downloads.openwrt.org` 的 ImageBuilder），第三方插件来自 [`MinimaxFlora/Extras_Paclages`](https://github.com/MinimaxFlora/Extras_Paclages)（24.x → `ipk` 分支，25.x → `apk` 分支）。
 
 ---
 
-## ✨ 特性
-
-| | | |
-| :--- | :--- | :--- |
-| 🚀 **云端编译** | 🔄 **版本自动检测** | 🧩 **第三方插件** |
-| GitHub Actions 构建，无需本地环境 | 自动拉取 OpenWrt 官方最新稳定版 | 自动导入 Extras_Paclages 插件 |
-| 📦 **多架构支持** | 🌐 **Web 服务器可选** | 🎨 **LuCI 主题定制** |
-| x86 全系 + Rockchip | uhttpd / nginx 自由切换 | 默认 argon 主题，6 种预设可选 |
-| 🔌 **PPPoE 拨号** | 🖥️ **预设后台 IP** | 📤 **自动发布 Release** |
-| 构建时写入宽带账号密码 | 首次启动自动设置管理地址 | 固件 + 后台信息自动发布 |
-
----
-
-## 📥 使用方法
-
-1. 打开本仓库 **Actions** 页面
-2. 选择 **Build OpenWrt Firmware** 工作流
-3. 点击 **Run workflow**，填写参数
-4. 等待构建完成（约 10-30 分钟）
-5. 在 **Releases** 页面下载固件
-
-> 💡 构建完成后固件自动发布到 Releases，包含完整的刷机镜像和后台信息说明。
-> 另有 **Build OpenWrt Firmware (Private)** 工作流，使用自建 runner 加速构建。
-
----
-
-## ⚙️ 构建参数
-
-| 参数 | 必填 | 默认值 | 说明 |
-| :--- | :---: | :--- | :--- |
-| **arch** | ✅ | `x86-64` | 设备架构：x86-64 / x86-generic / x86-geode / x86-legacy / rockchip-armv8 |
-| **series** | ✅ | `25` | OpenWrt 系列：`24`（24.10 ipk）或 `25`（25.12 apk） |
-| **profile** | ❌ | `generic` | 设备 PROFILE（rockchip 填型号，如 `friendlyarm_nanopi-r4s`） |
-| **custom_router_ip** | ✅ | `192.168.100.1` | 路由器管理地址（仅多网口路由器有效） |
-| **rootfs_partsize** | ✅ | `1G` | 软件包分区大小：1G / 2G / 3G / 4G |
-| **web_server** | ✅ | `uhttpd` | Web 服务器：`uhttpd`（装 luci）或 `nginx`（装 luci-nginx + 自动配置） |
-| **theme** | ✅ | `argon` | LuCI 主题预设：`argon` / `kucat` / `aurora` / `design` / `shadcn` / `fluent`（不设置默认 argon） |
-| **packages** | ❌ | *(空)* | 额外插件，空格分隔（如 `luci-app-openclash luci-app-passwall`） |
-| **root_password** | ❌ | *(空)* | 固件 root 密码（留空则保持默认空密码） |
-
----
-
-## 🔑 Secrets（仓库密钥）
-
-在仓库 **Settings → Secrets and variables → Actions** 中配置：
-
-| Secret | 必填 | 说明 |
-| :--- | :---: | :--- |
-| `PPPOE_ACCOUNT` | ❌ | 宽带账号；与 `PPPOE_PASSWORD` **同时设置**才启用 PPPoE 拨号 |
-| `PPPOE_PASSWORD` | ❌ | 宽带密码；不填则 WAN 保持 DHCP |
-
----
-
-## 🧭 架构选择
-
-| 架构 | 适用设备 |
-| :--- | :--- |
-| `x86-64` | 主流 x86 软路由（J4125 / N5105 / 倍控 / R86S 等） |
-| `x86-generic` | 通用 x86 设备 |
-| `x86-geode` | Geode 平台工控机 |
-| `x86-legacy` | 老款 x86 设备（不支持 UEFI） |
-| `rockchip-armv8` | 瑞芯微 ARM 设备（R4S / R2S / NanoPi 等） |
-
----
-
-## 🌐 Web 服务器选择
-
-| 选项 | 安装包 | 说明 |
-| :--- | :--- | :--- |
-| `uhttpd`（默认） | `luci` | 系统默认 Web 服务器，轻量稳定 |
-| `nginx` | `luci-nginx` | 高性能 Nginx，首次启动自动写入监听 80 / conf.d 包含等配置 |
-
-> 选 nginx 时固件首次开机自动执行完整的 nginx uci 配置并重启服务，无需手动设置。
-
----
-
-## 🎨 LuCI 主题定制
-
-预设主题（默认 `argon`，不设置即 argon），下拉选择即可：
-
-| 预设 | 安装包 |
-| :--- | :--- |
-| `argon`（默认） | `luci-theme-argon` + `luci-i18n-argon-config-zh-cn` |
-| `kucat` | `luci-theme-kucat` + `luci-i18n-kucat-config-zh-cn` |
-| `aurora` | `luci-theme-aurora` + `luci-i18n-aurora-config-zh-cn` |
-| `design` | `luci-theme-design` |
-| `shadcn` | `luci-theme-shadcn` |
-| `fluent` | `luci-theme-fluent` + `luci-i18n-fluent-zh-cn` |
-
----
-
-## 📦 构建产物
-
-固件发布在 **Releases** 页面，tag 格式：
+## 工作流结构
 
 ```
-Autobuild-<架构>          # 云端构建
-Private-<架构>            # 自建 runner 构建
+.github/
+├── scripts/
+│   ├── check_feed_packages.py   # 构建前：插件是否真的在 feed 里
+│   └── verify_manifest.py       # 构建后：插件是否真的进了固件
+└── workflows/
+    ├── _firmware-build.yml        # 可复用主流程（workflow_call），所有逻辑都在这里
+    ├── build-release.yml          # GitHub 托管 runner 入口（tag 前缀 Autobuild）
+    └── build-private-release.yml  # self-hosted runner 入口（tag 前缀 Private）
 ```
 
-每个 Release 包含：
-- 📥 刷机镜像（`.img.gz` / `.bin`）
-- 📋 后台信息说明（管理地址 / 账号密码 / Web 服务器 / 主题 / 已装插件）
+两个入口只负责输入表单，构建逻辑共用一份，避免两套流程各改各的漂移。
+
+### 主流程做了什么
+
+| 阶段 | 说明 |
+|---|---|
+| 1. 校验输入 | x86 必须 `profile=generic`、rockchip 必须填具体型号、主题/Web 服务器在允许列表内、管理地址格式合法 —— 几秒内失败，不浪费一次构建 |
+| 2. 校验插件 | 拉 `Extras_Paclages` 索引（`apk/<arch>/index.json` 或 `ipk/<arch>/Packages`），逐个确认请求的插件真的存在；拼错的包名在这里就点名报错 |
+| 3. 构建 | 调 ImageBuilder：自动取该系列最新稳定版，套用 Web 服务器、主题、默认管理地址、root 密码、PPPoE |
+| 4. 产物断言 | 读 ImageBuilder 生成的 `.manifest`，逐个确认插件、主题包、Web 服务器包**真的进了固件**（不是"编译成功"就算数） |
+| 5. 校验和 + 摘要 | 生成 `SHA256SUMS`，并把架构 / 系列 / 主题 / 插件 / 镜像体积 / sha256 写进 Job Summary |
+| 6. 交付 | 先上传 artifact（构建失败也能下载来查），再发 Release |
 
 ---
 
-## 🛠️ 工作原理
+## 使用
+
+`Actions → Build OpenWrt Firmware → Run workflow`
+
+| 输入 | 取值 | 说明 |
+|---|---|---|
+| `arch` | `x86-64` / `x86-generic` / `x86-geode` / `x86-legacy` / `rockchip-armv8` | 目标架构 |
+| `series` | `24` / `25` | 24 = 24.10（opkg/ipk）、25 = 25.12（apk），自动取该系列最新稳定版 |
+| `profile` | `generic`（x86）/ `friendlyarm_nanopi-r4s` 等 | ImageBuilder 的设备 PROFILE |
+| `custom_router_ip` | `192.168.100.1` 等 | 首启写入的管理地址 |
+| `rootfs_partsize` | `1G` / `2G` / `3G` / `4G` | 软件包分区大小 |
+| `web_server` | `uhttpd` / `nginx` | `nginx` 装 `luci-nginx` 并在首启写好 nginx 配置；插件含 `quickfile` 时会自动切 nginx |
+| `theme` | `argon` / `vantage` / `aurora` / `design` / `shadcn` / `fluent` | LuCI 主题 |
+| `packages` | 空格分隔 | 必须是 `Extras_Paclages` 里已发布的包名 |
+| `root_password` | 留空 = 空密码 | 设置了密码则**只上传 artifact、不发 Release**，避免带密码的固件公开分发 |
+
+### 例子：x86_64 / 25.12 / Argon / nginx
 
 ```
-workflow_dispatch 手动触发
-        │
-        ▼
-检测 OpenWrt 官方最新版本（24.x / 25.x）
-        │
-        ▼
-官方下载 ImageBuilder ──▶ 解压
-        │
-        ▼
-写入 uci-defaults（LAN IP / PPPoE / nginx / root 密码 / 作者信息）
-        │
-        ▼
-组装软件包（默认包 + Web 服务器 + 主题 + 额外插件）
-        │
-        ▼
-导入 Extras_Paclages 第三方插件（ipk / apk / .run）
-        │
-        ▼
-make image ──▶ 生成固件 ──▶ 发布 Release
+arch              x86-64
+series            25
+profile           generic
+custom_router_ip  192.168.100.1
+rootfs_partsize   2G
+web_server        nginx
+theme             argon
+packages          luci-app-homeproxy luci-app-nikki luci-app-mosdns luci-app-socat luci-app-ramfree luci-app-quickfile luci-app-diskman luci-app-adguardhome
 ```
 
-> 底层由 [gh-action-imagebuilder](https://github.com/MinimaxFlora/gh-action-imagebuilder) 驱动，
-> ImageBuilder 直接从 OpenWrt 官方下载，自动检测最新版本，无需手动维护。
+> `luci-app-quickfile` 依赖 nginx，所以这里显式选 `nginx`；即使忘了选，构建脚本也会自动切换并打印提示。
+
+### Secrets
+
+| Secret | 说明 |
+|---|---|
+| `PPPOE_ACCOUNT` / `PPPOE_PASSWORD` | 两个都配置才会写入 PPPoE 拨号，否则 WAN 保持 DHCP |
 
 ---
 
-<div align="center">
+## 产物
 
-**Made with ❤️ by [MinimaxFlora](https://github.com/MinimaxFlora)**
+- **Release**：`Autobuild-<arch>`（托管）/ `Private-<arch>`（自建 runner），附 `*.img.gz`、`*.bin`、`SHA256SUMS` 和一份后台信息说明
+- **Artifact**：`firmware-<arch>-<series>`，含镜像、`SHA256SUMS`、`.manifest`，保留 14 天
+- **Job Summary**：镜像清单 + sha256 + 固件内包数量，不下载也能核对
 
-</div>
+烧录后可自查完整性：
+
+```bash
+sha256sum -c SHA256SUMS
+```
+
+---
+
+## 常见问题
+
+**插件名写错 / 还没发布** —— 第 2 步就失败，日志里写明 `feed 里没有这个插件：xxx`。去 `Extras_Paclages` 的 `Build OpenWrt Packages` 把包编出来并同步后再来。
+
+**构建成功但固件里没这个包** —— 第 4 步用 `.manifest` 断言并列出缺失项，通常是依赖冲突（比如被 `CONFLICTS` 顶掉）。
+
+**想换插件源（CDN）** —— 主流程支持 `feed_host` 输入，默认 `https://raw.githubusercontent.com/MinimaxFlora/Extras_Paclages`，可换成 jsDelivr 之类镜像。
+
+**想跑在自建 runner** —— 用 `Build OpenWrt Firmware (Private)`，它复用同一套流程，只是 `runs-on: self-hosted` 且跳过依赖安装。
