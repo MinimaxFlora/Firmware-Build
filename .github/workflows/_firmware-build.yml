@@ -280,6 +280,27 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      - name: Remove stale release assets
+        if: ${{ success() && inputs.root_password == '' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag_prefix }}-${{ inputs.arch }}
+        run: |
+          set -euo pipefail
+          # 同一个 tag 会一版一版往上叠，旧版本的镜像不清掉会越攒越多
+          # （例如 25.12.5 和 25.12.6 的 img.gz 混在一起，很容易刷错）
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' \
+              | while IFS= read -r name; do
+                  [ -n "$name" ] || continue
+                  echo "删除旧资产: $name"
+                  gh release delete-asset "$TAG" "$name" --repo "$GITHUB_REPOSITORY" --yes || true
+                done
+          else
+            echo "Release $TAG 还不存在，跳过清理"
+          fi
+
       - name: Publish release
         if: ${{ success() && inputs.root_password == '' }}
         uses: MinimaxFlora/action-gh-release@v1.0
